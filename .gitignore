@@ -1,0 +1,25 @@
+# backend (Gradle/Kotlin)
+backend/build/
+backend/.gradle/
+backend/uploads/
+backend/data/
+backend/out/
+*.class
+*.log
+
+# frontend (Vite/Node)
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+
+# env files (never commit secrets)
+.env
+.env.*
+!.env.example
+!**/.env.example
+
+# IDE
+.idea/
+.vscode/
+*.iml
+.DS_Store

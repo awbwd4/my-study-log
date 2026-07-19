@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { apiClient } from "../api/client";
+import { compressImage } from "../utils/compressImage";
 
 type QuestionType = "ESSAY" | "MULTIPLE_CHOICE";
 
@@ -94,9 +95,14 @@ export function NoteDetailPage() {
     setWords(data);
   };
 
-  const handleImageSelected = async (file: File | null) => {
+  const handleImageSelected = async (rawFile: File | null) => {
+    if (!rawFile) {
+      setImageFile(null);
+      return;
+    }
+
+    const file = await compressImage(rawFile);
     setImageFile(file);
-    if (!file) return;
 
     setIsRecognizing(true);
     try {

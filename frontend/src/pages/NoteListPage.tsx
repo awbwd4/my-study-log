@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { apiClient } from "../api/client";
+import { compressImage } from "../utils/compressImage";
 
 type QuestionType = "ESSAY" | "MULTIPLE_CHOICE";
 
@@ -60,8 +61,10 @@ export function NoteListPage() {
     setUploadProgress({ total: files.length });
     setIsUploading(true);
 
+    const compressedFiles = await Promise.all(Array.from(files).map((file) => compressImage(file)));
+
     const payload = new FormData();
-    Array.from(files).forEach((file) => payload.append("images", file));
+    compressedFiles.forEach((file) => payload.append("images", file));
     if (studentId) payload.append("studentId", studentId);
 
     try {

@@ -32,6 +32,9 @@ dependencies {
 	runtimeOnly("io.jsonwebtoken:jjwt-jackson:0.12.6")
 	runtimeOnly("com.h2database:h2")
 	runtimeOnly("org.postgresql:postgresql")
+	// RestClient의 멀티파트 요청 빌더가 reactive-streams 클래스를 참조하므로 필요
+	// (WebFlux는 안 쓰지만 이 클래스가 없으면 NoClassDefFoundError 발생)
+	runtimeOnly("io.projectreactor:reactor-core")
 	testImplementation("org.springframework.boot:spring-boot-starter-test")
 	testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
 	testImplementation("org.springframework.security:spring-security-test")

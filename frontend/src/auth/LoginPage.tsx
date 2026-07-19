@@ -50,11 +50,15 @@ export function LoginPage() {
             accessToken: authObj.access_token,
           });
           handleAuthResult(data);
-        } catch {
+        } catch (err) {
+          console.error("Kakao login backend exchange failed:", err);
           setError("카카오 로그인 처리 중 오류가 발생했습니다");
         }
       },
-      fail: () => setError("카카오 로그인에 실패했습니다"),
+      fail: (err) => {
+        console.error("Kakao.Auth.login failed:", err);
+        setError(`카카오 로그인에 실패했습니다: ${JSON.stringify(err)}`);
+      },
     });
   };
 

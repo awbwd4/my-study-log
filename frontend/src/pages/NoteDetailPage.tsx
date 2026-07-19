@@ -47,6 +47,8 @@ export function NoteDetailPage() {
   const [details, setDetails] = useState<NoteDetail[]>([]);
   const [form, setForm] = useState(emptyForm());
   const [imageFile, setImageFile] = useState<File | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [wordsByDetail, setWordsByDetail] = useState<Record<number, WordEntry[]>>({});
   const [newWord, setNewWord] = useState<Record<number, { word: string; meaning: string }>>({});
 
@@ -67,16 +69,30 @@ export function NoteDetailPage() {
 
   const submitDetail = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSubmitError(null);
+
+    if (!form.body.trim() && !imageFile) {
+      setSubmitError("문제 본문을 입력하거나 사진을 첨부해주세요");
+      return;
+    }
+
     const payload = new FormData();
     payload.append("data", new Blob([JSON.stringify(form)], { type: "application/json" }));
     if (imageFile) payload.append("image", imageFile);
 
-    await apiClient.post(`/api/notes/${noteId}/details`, payload, {
-      headers: { "Content-Type": "multipart/form-data" },
-    });
-    setForm(emptyForm());
-    setImageFile(null);
-    loadDetails();
+    setIsSubmitting(true);
+    try {
+      await apiClient.post(`/api/notes/${noteId}/details`, payload, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      setForm(emptyForm());
+      setImageFile(null);
+      loadDetails();
+    } catch {
+      setSubmitError("문제 등록에 실패했습니다");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const addWord = async (detailId: number) => {
@@ -96,12 +112,14 @@ export function NoteDetailPage() {
       <form onSubmit={submitDetail} style={{ border: "1px solid #ddd", padding: 12, marginBottom: 24 }}>
         <h3>문제 추가</h3>
         <textarea
-          placeholder="문제 본문"
+          placeholder="문제 본문 (사진만 첨부해도 괜찮아요)"
           value={form.body}
           onChange={(e) => setForm({ ...form, body: e.target.value })}
-          required
-          style={{ width: "100%", marginBottom: 8 }}
+          style={{ width: "100%", marginBottom: 4 }}
         />
+        <p style={{ fontSize: 12, color: "#888", marginTop: 0, marginBottom: 8 }}>
+          사진을 첨부하면 문제 텍스트를 자동으로 인식합니다 (직접 입력한 내용이 있으면 그걸 우선 사용해요)
+        </p>
         <input
           placeholder="제출한 답안"
           value={form.submittedAnswer}
@@ -146,7 +164,10 @@ export function NoteDetailPage() {
           onChange={(e) => setImageFile(e.target.files?.[0] ?? null)}
           style={{ width: "100%", marginBottom: 8 }}
         />
-        <button type="submit">추가</button>
+        {submitError && <p style={{ color: "red", fontSize: 13 }}>{submitError}</p>}
+        <button type="submit" disabled={isSubmitting}>
+          {isSubmitting ? "처리 중... (사진 인식에 몇 초 걸릴 수 있어요)" : "추가"}
+        </button>
       </form>
 
       {details.map((detail) => (

@@ -18,6 +18,9 @@ jwt:
 kakao:
   rest-api-key: ${KAKAO_REST_API_KEY:dummy}
 
+upstage:
+  api-key: ${UPSTAGE_API_KEY:}
+
 file:
   upload-dir: ./uploads
 

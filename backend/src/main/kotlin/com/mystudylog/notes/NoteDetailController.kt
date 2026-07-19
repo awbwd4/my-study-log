@@ -3,6 +3,7 @@ package com.mystudylog.notes
 import com.mystudylog.academy.student.assertCanAccessStudent
 import com.mystudylog.common.FileStorageService
 import com.mystudylog.common.NotFoundException
+import com.mystudylog.ocr.OcrClient
 import java.time.LocalDate
 import org.springframework.http.MediaType
 import org.springframework.web.bind.annotation.DeleteMapping
@@ -16,7 +17,7 @@ import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.multipart.MultipartFile
 
 data class NoteDetailRequest(
-    val body: String,
+    val body: String? = null,
     val submittedAnswer: String?,
     val isActuallyWrong: Boolean,
     val questionType: QuestionType,
@@ -51,7 +52,16 @@ class NoteDetailController(
     private val noteRepository: WrongAnswerNoteRepository,
     private val detailRepository: WrongAnswerNoteDetailRepository,
     private val fileStorageService: FileStorageService,
+    private val ocrClient: OcrClient,
 ) {
+
+    /** 이미지가 있고 본문이 비어있으면 OCR로 채운다. 사용자가 직접 입력한 본문은 절대 덮어쓰지 않는다. */
+    private fun resolveBody(requestBody: String?, image: MultipartFile?): String {
+        val manual = requestBody?.takeUnless { it.isBlank() }
+        if (manual != null) return manual
+        val ocrText = image?.takeUnless { it.isEmpty }?.let { ocrClient.extractText(it) }
+        return ocrText ?: ""
+    }
 
     @GetMapping
     fun list(@PathVariable noteId: Long): List<NoteDetailResponse> {
@@ -68,7 +78,7 @@ class NoteDetailController(
         val note = findNote(noteId)
         val detail = WrongAnswerNoteDetail(
             wrongAnswerNote = note,
-            body = request.body,
+            body = resolveBody(request.body, image),
             submittedAnswer = request.submittedAnswer,
             isActuallyWrong = request.isActuallyWrong,
             questionType = request.questionType,
@@ -89,7 +99,8 @@ class NoteDetailController(
     ): NoteDetailResponse {
         findNote(noteId)
         val detail = findDetail(noteId, id)
-        detail.body = request.body
+        val resolved = resolveBody(request.body, image)
+        if (resolved.isNotBlank()) detail.body = resolved
         detail.submittedAnswer = request.submittedAnswer
         detail.isActuallyWrong = request.isActuallyWrong
         detail.questionType = request.questionType

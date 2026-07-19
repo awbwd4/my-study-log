@@ -231,7 +231,6 @@ export function NoteDetailPage() {
         <input
           type="file"
           accept="image/*"
-          capture="environment"
           onChange={(e) => handleImageSelected(e.target.files?.[0] ?? null)}
           style={{ width: "100%", marginBottom: 4 }}
         />

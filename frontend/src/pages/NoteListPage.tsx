@@ -89,7 +89,6 @@ export function NoteListPage() {
         ref={fileInputRef}
         type="file"
         accept="image/*"
-        capture="environment"
         multiple
         style={{ display: "none" }}
         onChange={(e) => handleFilesSelected(e.target.files)}

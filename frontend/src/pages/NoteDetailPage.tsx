@@ -49,6 +49,7 @@ export function NoteDetailPage() {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [isRecognizing, setIsRecognizing] = useState(false);
   const [wordsByDetail, setWordsByDetail] = useState<Record<number, WordEntry[]>>({});
   const [newWord, setNewWord] = useState<Record<number, { word: string; meaning: string }>>({});
 
@@ -65,6 +66,27 @@ export function NoteDetailPage() {
   const loadWords = async (detailId: number) => {
     const { data } = await apiClient.get<WordEntry[]>(`/api/notes/${noteId}/details/${detailId}/words`);
     setWordsByDetail((prev) => ({ ...prev, [detailId]: data }));
+  };
+
+  const handleImageSelected = async (file: File | null) => {
+    setImageFile(file);
+    if (!file) return;
+
+    setIsRecognizing(true);
+    try {
+      const photoData = new FormData();
+      photoData.append("image", file);
+      const { data } = await apiClient.post<{ text: string | null }>("/api/ocr", photoData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      if (data.text) {
+        setForm((prev) => (prev.body.trim() ? prev : { ...prev, body: data.text as string }));
+      }
+    } catch {
+      // 즉시 인식 실패는 조용히 무시 — 제출 시 서버에서 한 번 더 시도한다
+    } finally {
+      setIsRecognizing(false);
+    }
   };
 
   const submitDetail = async (e: React.FormEvent) => {
@@ -161,12 +183,13 @@ export function NoteDetailPage() {
           type="file"
           accept="image/*"
           capture="environment"
-          onChange={(e) => setImageFile(e.target.files?.[0] ?? null)}
-          style={{ width: "100%", marginBottom: 8 }}
+          onChange={(e) => handleImageSelected(e.target.files?.[0] ?? null)}
+          style={{ width: "100%", marginBottom: 4 }}
         />
+        {isRecognizing && <p style={{ fontSize: 12, color: "#888", marginTop: 0, marginBottom: 8 }}>사진에서 텍스트 인식 중...</p>}
         {submitError && <p style={{ color: "red", fontSize: 13 }}>{submitError}</p>}
-        <button type="submit" disabled={isSubmitting}>
-          {isSubmitting ? "처리 중... (사진 인식에 몇 초 걸릴 수 있어요)" : "추가"}
+        <button type="submit" disabled={isSubmitting || isRecognizing}>
+          {isSubmitting ? "저장 중..." : "추가"}
         </button>
       </form>
 

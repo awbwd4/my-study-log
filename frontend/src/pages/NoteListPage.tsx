@@ -69,8 +69,10 @@ export function NoteListPage() {
         headers: { "Content-Type": "multipart/form-data" },
       });
       await load();
-    } catch {
-      setError("오답노트 등록에 실패했습니다");
+    } catch (err) {
+      const message =
+        (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? "오답노트 등록에 실패했습니다";
+      setError(message);
     } finally {
       setIsUploading(false);
       setUploadProgress(null);

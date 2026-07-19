@@ -8,8 +8,10 @@ spring:
     active: dev
   servlet:
     multipart:
-      max-file-size: 10MB
-      max-request-size: 10MB
+      # 폰 카메라 사진은 장당 몇 MB씩 되고, 오답노트 등록은 여러 장을 한 요청으로 올리므로
+      # 넉넉하게 잡는다 (사진 한 장 최대 15MB, 한 번에 올리는 전체 요청은 최대 80MB).
+      max-file-size: 15MB
+      max-request-size: 80MB
 
 jwt:
   expiration-ms: 86400000

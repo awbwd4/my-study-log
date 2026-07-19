@@ -13,10 +13,14 @@ import org.springframework.web.multipart.MultipartFile
 data class DocumentParseCoordinate(val x: Double = 0.0, val y: Double = 0.0)
 data class DocumentParseElementContent(val text: String? = null)
 data class DocumentParseElement(
+    val category: String? = null,
     val content: DocumentParseElementContent = DocumentParseElementContent(),
     val coordinates: List<DocumentParseCoordinate> = emptyList(),
 )
 data class DocumentParseResponse(val elements: List<DocumentParseElement>? = null)
+
+/** 이 카테고리의 블록은 항목별 줄바꿈이 실제 의미가 있으므로(예: 객관식 선지) 줄바꿈을 그대로 둔다. */
+private val LINE_PRESERVING_CATEGORIES = setOf("list", "table")
 
 private data class XRange(val min: Double, val max: Double)
 
@@ -67,12 +71,23 @@ class OcrClient(
 
             elements
                 .filter { isInColumn(it, mainColumn) }
-                .joinToString("\n\n") { it.content.text!!.trim() }
+                .joinToString("\n\n") { reflow(it) }
                 .takeUnless { it.isBlank() }
         } catch (ex: RestClientException) {
             log.warn("OCR 텍스트 추출 실패, 수동 입력값으로 대체합니다", ex)
             null
         }
+    }
+
+    /**
+     * Document Parse의 text 필드는 인쇄된 실제 줄바꿈(칸 폭이 좁아 다음 줄로 넘어간 것)까지
+     * \n으로 그대로 준다. 이건 문단 구분이 아니라 단순 word-wrap이라, 목록/표가 아닌 블록(문단,
+     * 제목 등)에서는 줄바꿈을 공백으로 바꿔 원래 하나로 이어 읽는 문장/문단으로 되돌린다.
+     */
+    private fun reflow(element: DocumentParseElement): String {
+        val text = element.content.text!!.trim()
+        if (element.category in LINE_PRESERVING_CATEGORIES) return text
+        return text.lines().joinToString(" ") { it.trim() }.replace(Regex(" +"), " ").trim()
     }
 
     /** 가장 넓은(폭이 큰) 블록을 "학생이 찍으려 한 지문"으로 보고 그 좌우 범위를 기준 컬럼으로 삼는다. */

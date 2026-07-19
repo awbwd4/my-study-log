@@ -90,7 +90,7 @@ export function LoginPage() {
 
       {error && <p style={{ color: "red" }}>{error}</p>}
 
-      {import.meta.env.DEV && (
+      {(import.meta.env.DEV || import.meta.env.VITE_ENABLE_DEV_LOGIN === "true") && (
         <form onSubmit={handleDevLogin} style={{ marginTop: 32, borderTop: "1px solid #ccc", paddingTop: 16 }}>
           <h3>개발자 로그인 (dev 전용)</h3>
           <input

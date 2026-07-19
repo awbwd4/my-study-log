@@ -20,3 +20,7 @@ kakao:
 
 file:
   upload-dir: ./uploads
+
+app:
+  dev-login:
+    enabled: ${ENABLE_DEV_LOGIN:false}

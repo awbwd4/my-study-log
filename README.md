@@ -64,5 +64,34 @@ npm run dev
 
 ## 배포
 
-- 백엔드: `SPRING_PROFILES_ACTIVE=prod`로 기동, `backend/.env.example`에 정리된 환경변수(`JWT_SECRET`, `DATABASE_URL`, `KAKAO_REST_API_KEY`, `CORS_ALLOWED_ORIGINS`)를 배포 플랫폼에 등록
-- 프론트엔드: `npm run build` 후 정적 호스팅, `VITE_API_BASE_URL`/`VITE_KAKAO_JS_KEY`를 빌드 환경변수로 설정
+### 백엔드 (Railway)
+
+Railway 프로젝트 `my-study-log`에 `backend` 서비스(Kotlin/Spring Boot)와 `Postgres` 서비스가 떠 있습니다.
+
+- **배포는 수동으로만 합니다.** GitHub 저장소 연동(자동배포)은 의도적으로 끊어뒀습니다 — 이 레포가
+  `backend/`, `frontend/`가 함께 있는 모노레포라, Railway의 서비스별 "Root Directory" 설정과
+  `railway up --path-as-root`로 스냅샷을 직접 올리는 방식이 서로 충돌해서(둘 다 같은 이름의
+  하위 디렉터리를 한 번 더 찾으려 해서) root directory를 지정해두면 수동 배포가 깨지고,
+  지정 안 해두면 GitHub push 자동배포가 깨지는 문제가 있었습니다. 수동 배포 쪽이 검증된
+  방식이라 이걸로 통일했습니다.
+- 코드를 고친 뒤 배포하려면:
+  ```bash
+  cd ~/my-study-log
+  railway up backend --path-as-root --service backend --ci
+  ```
+- 환경변수(`SPRING_PROFILES_ACTIVE=prod`, `JWT_SECRET`, `DATABASE_URL`/`DATABASE_USERNAME`/`DATABASE_PASSWORD`,
+  `KAKAO_REST_API_KEY`, `CORS_ALLOWED_ORIGINS`)는 이미 Railway `backend` 서비스에 등록돼 있습니다.
+  `DATABASE_URL`은 PostgreSQL JDBC 드라이버가 `user:pass@host` 형태를 지원하지 않기 때문에
+  `jdbc:postgresql://호스트:포트/DB`만 담고, 인증정보는 `DATABASE_USERNAME`/`DATABASE_PASSWORD`로 분리했습니다.
+  변경하려면: `railway variable set KEY=VALUE --service backend`
+- 시작 명령어는 `backend/railway.json`에 명시돼 있습니다 (Railway의 Railpack 빌더가 자동 생성하는
+  기본 명령어는 하위 모듈이 있는 멀티 프로젝트 구조를 가정해서 우리 같은 단일 Gradle 프로젝트에서는
+  jar를 못 찾는 버그가 있어 직접 지정함).
+- 공개 URL: 배포 후 `railway domain --service backend`로 확인/발급
+
+### 프론트엔드 (Vercel)
+
+- `npm run build` 후 정적 호스팅, 빌드 환경변수로 `VITE_API_BASE_URL`(백엔드 Railway URL)과
+  `VITE_KAKAO_JS_KEY`를 설정
+- 프론트 도메인이 정해지면 백엔드 `CORS_ALLOWED_ORIGINS`도 그 도메인으로 업데이트해야 합니다:
+  `railway variable set CORS_ALLOWED_ORIGINS=https://your-app.vercel.app --service backend`

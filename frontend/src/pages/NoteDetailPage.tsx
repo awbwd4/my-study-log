@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { apiClient } from "../api/client";
 
@@ -61,6 +61,14 @@ export function NoteDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [words, setWords] = useState<WordEntry[] | null>(null);
   const [newWord, setNewWord] = useState({ word: "", meaning: "" });
+  const bodyTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  useEffect(() => {
+    const el = bodyTextareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [form.body]);
 
   const load = async () => {
     setLoading(true);
@@ -157,10 +165,20 @@ export function NoteDetailPage() {
 
       <form onSubmit={save} style={{ border: "1px solid #ddd", padding: 12 }}>
         <textarea
+          ref={bodyTextareaRef}
           placeholder="문제 본문 (사진만 첨부해도 괜찮아요)"
           value={form.body}
           onChange={(e) => setForm({ ...form, body: e.target.value })}
-          style={{ width: "100%", minHeight: 120, marginBottom: 4 }}
+          style={{
+            width: "100%",
+            minHeight: 120,
+            marginBottom: 4,
+            fontFamily: "inherit",
+            fontSize: 14,
+            lineHeight: 1.5,
+            overflow: "hidden",
+            resize: "none",
+          }}
         />
         <p style={{ fontSize: 12, color: "#888", marginTop: 0, marginBottom: 8 }}>
           사진을 새로 첨부하면 문제 텍스트를 자동으로 다시 인식합니다

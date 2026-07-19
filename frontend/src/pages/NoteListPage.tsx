@@ -33,7 +33,9 @@ export function NoteListPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState<{ total: number } | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<{ completed: number; total: number; currentPercent: number } | null>(
+    null,
+  );
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const load = async () => {
@@ -58,29 +60,40 @@ export function NoteListPage() {
   const handleFilesSelected = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
     setError(null);
-    setUploadProgress({ total: files.length });
     setIsUploading(true);
 
-    const compressedFiles = await Promise.all(Array.from(files).map((file) => compressImage(file)));
+    const total = files.length;
+    const failures: string[] = [];
 
-    const payload = new FormData();
-    compressedFiles.forEach((file) => payload.append("images", file));
-    if (studentId) payload.append("studentId", studentId);
+    for (let i = 0; i < total; i++) {
+      setUploadProgress({ completed: i, total, currentPercent: 0 });
+      try {
+        const compressed = await compressImage(files[i]);
+        const payload = new FormData();
+        payload.append("images", compressed);
+        if (studentId) payload.append("studentId", studentId);
 
-    try {
-      await apiClient.post("/api/notes/batch", payload, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-      await load();
-    } catch (err) {
-      const message =
-        (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? "오답노트 등록에 실패했습니다";
-      setError(message);
-    } finally {
-      setIsUploading(false);
-      setUploadProgress(null);
-      if (fileInputRef.current) fileInputRef.current.value = "";
+        const { data } = await apiClient.post<Note[]>("/api/notes/batch", payload, {
+          headers: { "Content-Type": "multipart/form-data" },
+          onUploadProgress: (evt) => {
+            const percent = evt.total ? Math.round((evt.loaded / evt.total) * 100) : 0;
+            setUploadProgress({ completed: i, total, currentPercent: percent });
+          },
+        });
+        setNotes((prev) => [...data, ...prev]);
+      } catch (err) {
+        const message =
+          (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? "알 수 없는 오류";
+        failures.push(`${i + 1}번째 사진: ${message}`);
+      }
     }
+
+    if (failures.length > 0) {
+      setError(`일부 사진 등록에 실패했습니다 — ${failures.join(", ")}`);
+    }
+    setIsUploading(false);
+    setUploadProgress(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   if (loading) return <p style={{ padding: 16 }}>불러오는 중...</p>;
@@ -98,11 +111,30 @@ export function NoteListPage() {
         style={{ display: "none" }}
         onChange={(e) => handleFilesSelected(e.target.files)}
       />
-      <button onClick={() => fileInputRef.current?.click()} disabled={isUploading} style={{ padding: 10 }}>
-        {isUploading
-          ? `오답노트 등록 중... (사진 ${uploadProgress?.total ?? 0}장 인식 중, 시간이 좀 걸려요)`
+      <button onClick={() => fileInputRef.current?.click()} disabled={isUploading} style={{ padding: 10, width: "100%" }}>
+        {isUploading && uploadProgress
+          ? uploadProgress.currentPercent < 100
+            ? `등록 중... (${uploadProgress.completed + 1}/${uploadProgress.total}번째 사진 업로드 ${uploadProgress.currentPercent}%)`
+            : `등록 중... (${uploadProgress.completed + 1}/${uploadProgress.total}번째 사진 텍스트 인식 중...)`
           : "+ 오답노트 등록 (사진 여러 장 선택 가능)"}
       </button>
+      {isUploading && uploadProgress && (
+        <div style={{ marginTop: 6 }}>
+          <div style={{ background: "#eee", borderRadius: 4, overflow: "hidden", height: 8 }}>
+            <div
+              style={{
+                width: `${((uploadProgress.completed + uploadProgress.currentPercent / 100) / uploadProgress.total) * 100}%`,
+                background: "#4a90d9",
+                height: "100%",
+                transition: "width 0.2s",
+              }}
+            />
+          </div>
+          <p style={{ fontSize: 12, color: "#888", margin: "4px 0 0" }}>
+            {uploadProgress.completed}/{uploadProgress.total}장 완료 · 사진마다 텍스트 인식에 몇 초씩 걸려요
+          </p>
+        </div>
+      )}
 
       <div style={{ marginTop: 16 }}>
         {notes.map((note) => (

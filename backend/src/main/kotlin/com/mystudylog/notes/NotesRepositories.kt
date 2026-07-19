@@ -3,11 +3,12 @@ package com.mystudylog.notes
 import org.springframework.data.jpa.repository.JpaRepository
 
 interface WrongAnswerNoteRepository : JpaRepository<WrongAnswerNote, Long> {
-    fun findByStudentId(studentId: Long): List<WrongAnswerNote>
+    fun findByStudentIdOrderByCreatedAtDesc(studentId: Long): List<WrongAnswerNote>
 }
 
 interface WrongAnswerNoteDetailRepository : JpaRepository<WrongAnswerNoteDetail, Long> {
     fun findByWrongAnswerNoteId(noteId: Long): List<WrongAnswerNoteDetail>
+    fun findByWrongAnswerNoteIdIn(noteIds: List<Long>): List<WrongAnswerNoteDetail>
 }
 
 interface WordRepository : JpaRepository<Word, Long> {

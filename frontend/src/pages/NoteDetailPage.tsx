@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { apiClient } from "../api/client";
 
 type QuestionType = "ESSAY" | "MULTIPLE_CHOICE";
@@ -17,6 +17,13 @@ interface NoteDetail {
   imagePath: string | null;
 }
 
+interface Note {
+  id: number;
+  studentId: number;
+  createdAt: string;
+  detail: NoteDetail | null;
+}
+
 interface WordItem {
   word: string;
   meaning: string;
@@ -30,42 +37,53 @@ interface WordEntry {
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8081";
 
-function emptyForm() {
+function formFromDetail(detail: NoteDetail | null) {
   return {
-    body: "",
-    submittedAnswer: "",
-    isActuallyWrong: true,
-    questionType: "MULTIPLE_CHOICE" as QuestionType,
-    registeredDate: new Date().toISOString().slice(0, 10),
-    isRetake: false,
-    originalQuestionKey: "",
+    body: detail?.body ?? "",
+    submittedAnswer: detail?.submittedAnswer ?? "",
+    isActuallyWrong: detail?.isActuallyWrong ?? true,
+    questionType: (detail?.questionType ?? "MULTIPLE_CHOICE") as QuestionType,
+    registeredDate: detail?.registeredDate ?? new Date().toISOString().slice(0, 10),
+    isRetake: detail?.isRetake ?? false,
+    originalQuestionKey: detail?.originalQuestionKey ?? "",
   };
 }
 
 export function NoteDetailPage() {
   const { noteId } = useParams();
-  const [details, setDetails] = useState<NoteDetail[]>([]);
-  const [form, setForm] = useState(emptyForm());
+  const navigate = useNavigate();
+  const [note, setNote] = useState<Note | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [form, setForm] = useState(formFromDetail(null));
   const [imageFile, setImageFile] = useState<File | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
   const [isRecognizing, setIsRecognizing] = useState(false);
-  const [wordsByDetail, setWordsByDetail] = useState<Record<number, WordEntry[]>>({});
-  const [newWord, setNewWord] = useState<Record<number, { word: string; meaning: string }>>({});
+  const [error, setError] = useState<string | null>(null);
+  const [words, setWords] = useState<WordEntry[] | null>(null);
+  const [newWord, setNewWord] = useState({ word: "", meaning: "" });
 
-  const loadDetails = async () => {
-    const { data } = await apiClient.get<NoteDetail[]>(`/api/notes/${noteId}/details`);
-    setDetails(data);
+  const load = async () => {
+    setLoading(true);
+    try {
+      const { data } = await apiClient.get<Note>(`/api/notes/${noteId}`);
+      setNote(data);
+      setForm(formFromDetail(data.detail));
+    } catch {
+      setError("오답노트를 불러오지 못했습니다");
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
-    loadDetails();
+    load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [noteId]);
 
-  const loadWords = async (detailId: number) => {
-    const { data } = await apiClient.get<WordEntry[]>(`/api/notes/${noteId}/details/${detailId}/words`);
-    setWordsByDetail((prev) => ({ ...prev, [detailId]: data }));
+  const loadWords = async () => {
+    if (!note?.detail) return;
+    const { data } = await apiClient.get<WordEntry[]>(`/api/notes/${noteId}/details/${note.detail.id}/words`);
+    setWords(data);
   };
 
   const handleImageSelected = async (file: File | null) => {
@@ -83,64 +101,69 @@ export function NoteDetailPage() {
         setForm((prev) => (prev.body.trim() ? prev : { ...prev, body: data.text as string }));
       }
     } catch {
-      // 즉시 인식 실패는 조용히 무시 — 제출 시 서버에서 한 번 더 시도한다
+      // 즉시 인식 실패는 조용히 무시 — 저장 시 서버에서 한 번 더 시도한다
     } finally {
       setIsRecognizing(false);
     }
   };
 
-  const submitDetail = async (e: React.FormEvent) => {
+  const save = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSubmitError(null);
-
-    if (!form.body.trim() && !imageFile) {
-      setSubmitError("문제 본문을 입력하거나 사진을 첨부해주세요");
-      return;
-    }
+    if (!note) return;
+    setError(null);
 
     const payload = new FormData();
     payload.append("data", new Blob([JSON.stringify(form)], { type: "application/json" }));
     if (imageFile) payload.append("image", imageFile);
 
-    setIsSubmitting(true);
+    setIsSaving(true);
     try {
-      await apiClient.post(`/api/notes/${noteId}/details`, payload, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-      setForm(emptyForm());
+      if (note.detail) {
+        await apiClient.put(`/api/notes/${noteId}/details/${note.detail.id}`, payload, {
+          headers: { "Content-Type": "multipart/form-data" },
+        });
+      } else {
+        await apiClient.post(`/api/notes/${noteId}/details`, payload, {
+          headers: { "Content-Type": "multipart/form-data" },
+        });
+      }
       setImageFile(null);
-      loadDetails();
+      await load();
     } catch {
-      setSubmitError("문제 등록에 실패했습니다");
+      setError("저장에 실패했습니다");
     } finally {
-      setIsSubmitting(false);
+      setIsSaving(false);
     }
   };
 
-  const addWord = async (detailId: number) => {
-    const entry = newWord[detailId];
-    if (!entry?.word || !entry?.meaning) return;
-    await apiClient.post(`/api/notes/${noteId}/details/${detailId}/words`, {
-      items: [{ word: entry.word, meaning: entry.meaning }],
+  const addWord = async () => {
+    if (!note?.detail || !newWord.word || !newWord.meaning) return;
+    await apiClient.post(`/api/notes/${noteId}/details/${note.detail.id}/words`, {
+      items: [{ word: newWord.word, meaning: newWord.meaning }],
     });
-    setNewWord((prev) => ({ ...prev, [detailId]: { word: "", meaning: "" } }));
-    loadWords(detailId);
+    setNewWord({ word: "", meaning: "" });
+    loadWords();
   };
 
+  if (loading) return <p style={{ padding: 16 }}>불러오는 중...</p>;
+  if (!note) return <p style={{ padding: 16, color: "red" }}>{error ?? "오답노트를 찾을 수 없습니다"}</p>;
+
   return (
-    <div style={{ padding: 16 }}>
+    <div style={{ padding: 16, maxWidth: 480 }}>
+      <button onClick={() => navigate(-1)} style={{ marginBottom: 12 }}>
+        ← 목록으로
+      </button>
       <h2>오답노트 #{noteId}</h2>
 
-      <form onSubmit={submitDetail} style={{ border: "1px solid #ddd", padding: 12, marginBottom: 24 }}>
-        <h3>문제 추가</h3>
+      <form onSubmit={save} style={{ border: "1px solid #ddd", padding: 12 }}>
         <textarea
           placeholder="문제 본문 (사진만 첨부해도 괜찮아요)"
           value={form.body}
           onChange={(e) => setForm({ ...form, body: e.target.value })}
-          style={{ width: "100%", marginBottom: 4 }}
+          style={{ width: "100%", minHeight: 120, marginBottom: 4 }}
         />
         <p style={{ fontSize: 12, color: "#888", marginTop: 0, marginBottom: 8 }}>
-          사진을 첨부하면 문제 텍스트를 자동으로 인식합니다 (직접 입력한 내용이 있으면 그걸 우선 사용해요)
+          사진을 새로 첨부하면 문제 텍스트를 자동으로 다시 인식합니다
         </p>
         <input
           placeholder="제출한 답안"
@@ -179,6 +202,14 @@ export function NoteDetailPage() {
           onChange={(e) => setForm({ ...form, originalQuestionKey: e.target.value })}
           style={{ width: "100%", marginBottom: 8 }}
         />
+
+        {note.detail?.imagePath && !imageFile && (
+          <img
+            src={`${API_BASE}${note.detail.imagePath}`}
+            alt="문제 사진"
+            style={{ maxWidth: 240, display: "block", marginBottom: 8 }}
+          />
+        )}
         <input
           type="file"
           accept="image/*"
@@ -187,56 +218,39 @@ export function NoteDetailPage() {
           style={{ width: "100%", marginBottom: 4 }}
         />
         {isRecognizing && <p style={{ fontSize: 12, color: "#888", marginTop: 0, marginBottom: 8 }}>사진에서 텍스트 인식 중...</p>}
-        {submitError && <p style={{ color: "red", fontSize: 13 }}>{submitError}</p>}
-        <button type="submit" disabled={isSubmitting || isRecognizing}>
-          {isSubmitting ? "저장 중..." : "추가"}
+        {error && <p style={{ color: "red", fontSize: 13 }}>{error}</p>}
+        <button type="submit" disabled={isSaving || isRecognizing}>
+          {isSaving ? "저장 중..." : "저장"}
         </button>
       </form>
 
-      {details.map((detail) => (
-        <div key={detail.id} style={{ border: "1px solid #eee", padding: 12, marginBottom: 12 }}>
-          <p>
-            <strong style={{ whiteSpace: "pre-wrap" }}>{detail.body}</strong> {detail.isRetake && "(재응시)"}
-          </p>
-          <p style={{ fontSize: 13, color: "#666" }}>
-            제출답안: {detail.submittedAnswer ?? "-"} · {detail.questionType === "ESSAY" ? "서술형" : "객관식"} ·{" "}
-            {detail.registeredDate}
-          </p>
-          {detail.imagePath && (
-            <img src={`${API_BASE}${detail.imagePath}`} alt="문제 사진" style={{ maxWidth: 240, display: "block" }} />
+      {note.detail && (
+        <div style={{ marginTop: 16 }}>
+          <button onClick={loadWords}>단어장 보기</button>
+          {words && (
+            <ul>
+              {words.flatMap((entry) =>
+                entry.items.map((item, idx) => (
+                  <li key={`${entry.id}-${idx}`}>
+                    {item.word} - {item.meaning}
+                  </li>
+                )),
+              )}
+            </ul>
           )}
-
-          <div style={{ marginTop: 8 }}>
-            <button onClick={() => loadWords(detail.id)}>단어장 보기</button>
-            {wordsByDetail[detail.id] && (
-              <ul>
-                {wordsByDetail[detail.id].flatMap((entry) =>
-                  entry.items.map((item, idx) => (
-                    <li key={`${entry.id}-${idx}`}>
-                      {item.word} - {item.meaning}
-                    </li>
-                  )),
-                )}
-              </ul>
-            )}
-            <input
-              placeholder="단어"
-              value={newWord[detail.id]?.word ?? ""}
-              onChange={(e) =>
-                setNewWord((prev) => ({ ...prev, [detail.id]: { word: e.target.value, meaning: prev[detail.id]?.meaning ?? "" } }))
-              }
-            />
-            <input
-              placeholder="뜻"
-              value={newWord[detail.id]?.meaning ?? ""}
-              onChange={(e) =>
-                setNewWord((prev) => ({ ...prev, [detail.id]: { word: prev[detail.id]?.word ?? "", meaning: e.target.value } }))
-              }
-            />
-            <button onClick={() => addWord(detail.id)}>단어 추가</button>
-          </div>
+          <input
+            placeholder="단어"
+            value={newWord.word}
+            onChange={(e) => setNewWord({ ...newWord, word: e.target.value })}
+          />
+          <input
+            placeholder="뜻"
+            value={newWord.meaning}
+            onChange={(e) => setNewWord({ ...newWord, meaning: e.target.value })}
+          />
+          <button onClick={addWord}>단어 추가</button>
         </div>
-      ))}
+      )}
     </div>
   );
 }

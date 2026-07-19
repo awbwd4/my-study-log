@@ -18,6 +18,8 @@ data class DocumentParseElement(
 )
 data class DocumentParseResponse(val elements: List<DocumentParseElement>? = null)
 
+private data class XRange(val min: Double, val max: Double)
+
 @Component
 class OcrClient(
     restClientBuilder: RestClient.Builder,
@@ -26,19 +28,20 @@ class OcrClient(
     private val restClient = restClientBuilder.baseUrl("https://api.upstage.ai").build()
     private val log = LoggerFactory.getLogger(OcrClient::class.java)
 
-    /**
-     * 시험지처럼 2단 이상으로 나뉜 사진을 찍으면, 옆 컬럼의 줄바꿈된 글자 조각이 실제 지문 사이에
-     * 한 줄씩 섞여 들어온다(단순 OCR은 읽기 순서를 모르고 줄 단위로만 읽기 때문). 이 폭보다 좁은
-     * 블록은 그런 "옆 컬럼에서 새어 들어온 조각"일 가능성이 매우 높아 결과에서 제외한다.
-     * (실제 시험지 사진으로 검증: 제목/지문/선지는 폭 0.148~0.58, 새어 들어온 조각은 최대 0.132였음.
-     * 그 사이인 0.14를 기준으로 삼음 — 세로로 짧게 나열되는 객관식 선지처럼 폭이 좁은 정상 블록도
-     * 있어서 여유를 너무 크게 잡으면 선지가 같이 잘려나간다)
-     */
-    private val minElementWidthRatio = 0.14
+    /** 메인 컬럼(가장 넓은 블록)의 좌우 경계 바깥/안쪽으로 이 정도(페이지 폭 비율)까지는 같은 컬럼으로 인정한다. */
+    private val columnToleranceRatio = 0.05
 
     /**
-     * 이미지에서 텍스트를 추출한다. Upstage Document Parse를 사용해 문서를 레이아웃 단위
-     * (제목/문단/목록 등)로 인식한 뒤, 그중 폭이 충분히 넓은 블록만 순서대로 이어붙인다.
+     * 이미지에서 텍스트를 추출한다. Upstage Document Parse로 문서를 레이아웃 블록(제목/문단/목록 등)
+     * 단위로 인식한 뒤, 그중 "학생이 실제로 찍으려 한 컬럼"에 속한 블록만 순서대로 이어붙인다.
+     *
+     * 시험지처럼 2단 이상으로 나뉜 페이지를 찍으면 옆 컬럼의 글자가 별도 블록으로 딸려 들어오는데,
+     * 처음엔 "블록 폭이 좁으면 옆 컬럼 조각"이라고 가정했지만 사진에 옆 컬럼이 넓게 잡히면 그 조각도
+     * 폭이 넓어져서 폭만으로는 못 걸러졌다. 대신 실제 지문(보통 가장 넓은 블록)의 좌우 위치를 "메인
+     * 컬럼"으로 보고, 그 범위 밖에 있는(왼쪽/오른쪽 가장자리에 걸친) 블록은 제외한다 — 실제 시험지
+     * 사진 여러 장으로 검증했을 때 옆 컬럼 조각은 항상 페이지 가장자리(x=0 또는 x=1 근처)에 걸쳐
+     * 있었고, 메인 컬럼 범위 안에 완전히 들어오는 경우는 없었다.
+     *
      * API 키 미설정, 네트워크 오류, 응답 파싱 실패 등 어떤 이유로든 실패하면 null을 반환할 뿐
      * 예외를 던지지 않는다 — 오답노트 등록 자체는 OCR 성공 여부와 무관하게 항상 완료되어야 하기 때문.
      */
@@ -59,19 +62,31 @@ class OcrClient(
                 .retrieve()
                 .body<DocumentParseResponse>()
 
-            response?.elements
-                ?.filter { isWideEnough(it) && !it.content.text.isNullOrBlank() }
-                ?.joinToString("\n\n") { it.content.text!!.trim() }
-                ?.takeUnless { it.isBlank() }
+            val elements = response?.elements?.filter { !it.content.text.isNullOrBlank() } ?: return null
+            val mainColumn = mainColumnRange(elements) ?: return null
+
+            elements
+                .filter { isInColumn(it, mainColumn) }
+                .joinToString("\n\n") { it.content.text!!.trim() }
+                .takeUnless { it.isBlank() }
         } catch (ex: RestClientException) {
             log.warn("OCR 텍스트 추출 실패, 수동 입력값으로 대체합니다", ex)
             null
         }
     }
 
-    private fun isWideEnough(element: DocumentParseElement): Boolean {
+    /** 가장 넓은(폭이 큰) 블록을 "학생이 찍으려 한 지문"으로 보고 그 좌우 범위를 기준 컬럼으로 삼는다. */
+    private fun mainColumnRange(elements: List<DocumentParseElement>): XRange? =
+        elements.mapNotNull(::xRangeOf).maxByOrNull { it.max - it.min }
+
+    private fun isInColumn(element: DocumentParseElement, column: XRange): Boolean {
+        val range = xRangeOf(element) ?: return true
+        return range.min >= column.min - columnToleranceRatio && range.max <= column.max + columnToleranceRatio
+    }
+
+    private fun xRangeOf(element: DocumentParseElement): XRange? {
         val xs = element.coordinates.map { it.x }
-        if (xs.isEmpty()) return true
-        return (xs.max() - xs.min()) >= minElementWidthRatio
+        if (xs.isEmpty()) return null
+        return XRange(xs.min(), xs.max())
     }
 }

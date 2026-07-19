@@ -196,7 +196,7 @@ export function NoteDetailPage() {
       {details.map((detail) => (
         <div key={detail.id} style={{ border: "1px solid #eee", padding: 12, marginBottom: 12 }}>
           <p>
-            <strong>{detail.body}</strong> {detail.isRetake && "(재응시)"}
+            <strong style={{ whiteSpace: "pre-wrap" }}>{detail.body}</strong> {detail.isRetake && "(재응시)"}
           </p>
           <p style={{ fontSize: 13, color: "#666" }}>
             제출답안: {detail.submittedAnswer ?? "-"} · {detail.questionType === "ESSAY" ? "서술형" : "객관식"} ·{" "}
